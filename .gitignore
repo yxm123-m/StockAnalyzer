@@ -28,3 +28,4 @@ db/*.db
 # Logs
 logs/*
 !logs/.gitkeep
+.github_token
