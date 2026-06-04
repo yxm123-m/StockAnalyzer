@@ -1,5 +1,5 @@
 """
-市场看板 — 指数、板块、涨跌排行
+市场看板 — 指数、板块、涨跌排行 (实时数据)
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,12 +21,15 @@ with col1:
     st.caption(f"更新时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 with col2:
     refresh = st.button("🔄 刷新数据", use_container_width=True)
+    if refresh:
+        st.cache_data.clear()
+        st.rerun()
 with col3:
     st.caption(f"股票池: {get_stock_count()} 只")
 
 st.markdown("### 📊 主要指数")
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def load_index_data():
     indices = []
     index_list = {"上证指数":"sh000001","深证成指":"sz399001","创业板指":"sz399006","科创50":"sh000688"}
@@ -74,9 +77,11 @@ with col_left:
 
 with col_right:
     st.markdown("### 🔥 涨跌排行")
-    @st.cache_data(ttl=300, show_spinner=False)
+
     def load_spot():
+        """实时行情 — 不使用缓存"""
         return fetch_spot_data()
+
     spot = load_spot()
     if spot is not None and not spot.empty:
         tab1, tab2 = st.tabs(["📈 涨幅榜", "📉 跌幅榜"])

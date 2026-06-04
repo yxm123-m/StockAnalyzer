@@ -1,5 +1,5 @@
 """
-市场看板 — 指数、板块、涨跌排行
+市场看板 — 指数、板块、涨跌排行 (实时数据)
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -22,13 +22,16 @@ with col1:
     st.caption(f"更新时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 with col2:
     refresh = st.button("🔄 刷新数据", use_container_width=True)
+    if refresh:
+        st.cache_data.clear()
+        st.rerun()
 with col3:
     st.caption(f"股票池: {get_stock_count()} 只")
 
 # ---- 指数行情 ----
 st.markdown("### 📊 主要指数")
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def load_index_data():
     indices = []
     index_list = {
@@ -40,11 +43,12 @@ def load_index_data():
             df = fetch_index_daily(symbol, "20260101")
             if df is not None and not df.empty:
                 latest = df.iloc[-1]
+                chg = latest.get('change_pct', 0) if 'change_pct' in df.columns \
+                    else ((latest.get('close', 0) - latest.get('open', 0)) /
+                          latest.get('open', 1) * 100)
                 indices.append({
                     'name': name, 'close': latest.get('close', 0),
-                    'change_pct': latest.get('change_pct', 0) if 'change_pct' in df.columns
-                    else ((latest.get('close', 0) - latest.get('open', 0)) /
-                          latest.get('open', 1) * 100),
+                    'change_pct': chg,
                     'volume': latest.get('volume', 0),
                 })
         except Exception:
@@ -58,7 +62,6 @@ if indices:
     for i, idx in enumerate(indices):
         with cols[i]:
             chg = idx.get('change_pct', 0)
-            color = "red" if chg > 0 else "green" if chg < 0 else "gray"
             st.metric(
                 idx['name'],
                 f"{idx['close']:,.2f}",
@@ -76,7 +79,6 @@ with col_left:
     try:
         sectors = fetch_sectors()
         if sectors is not None and not sectors.empty:
-            # 尝试不同列名
             name_col = next((c for c in sectors.columns if '名称' in c or 'name' in c.lower()), sectors.columns[0])
             chg_col = next((c for c in sectors.columns if '涨跌幅' in c or 'change' in c.lower() or 'pct' in c.lower()), None)
 
@@ -103,8 +105,8 @@ with col_left:
 with col_right:
     st.markdown("### 🔥 涨跌排行")
 
-    @st.cache_data(ttl=300, show_spinner=False)
     def load_spot():
+        """实时行情 — 不使用缓存"""
         return fetch_spot_data()
 
     spot = load_spot()

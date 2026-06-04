@@ -1,5 +1,5 @@
 """
-集合竞价分析页面 — 竞价指标展示 + 股票推荐
+集合竞价分析页面 — 竞价指标展示 + 股票推荐 (前10, 排除科创板/创业板)
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +17,7 @@ show_disclaimer()
 
 st.title("🔬 集合竞价分析")
 st.caption("基于集合竞价量能、价格趋势、买卖失衡、跳空幅度四维评分模型，筛选潜在强势股")
+st.caption("⚠️ 已排除科创板(688xxx)和创业板(300xxx)股票")
 
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
@@ -44,7 +45,7 @@ if scan_btn:
                 for r in records:
                     r['name'] = stock_map.get(r['code'], r['code'])
                 results = score_all(records, date_str)
-            st.success(f"评分完成! 共分析 {len(results)} 只股票")
+            st.success(f"评分完成! 共分析 {len(results)} 只股票 (已排除科创板/创业板)")
 
             st.markdown("### 📊 分析概览")
             a_count = sum(1 for r in results if r['grade'] == 'A')
@@ -58,8 +59,8 @@ if scan_btn:
             m4.metric("⚪ D级忽略", d_count)
             m5.metric("总计", len(results))
 
-            st.markdown("### 🏆 推荐股票列表")
-            top_n = min(30, len(results))
+            st.markdown("### 🏆 推荐股票列表 (前10)")
+            top_n = min(10, len(results))
             df_show = pd.DataFrame(results[:top_n])
             if not df_show.empty:
                 cols = ['rank','code','name','total_score','grade',
@@ -97,4 +98,5 @@ st.markdown("""
 | **跳空得分** | 20分 | 开盘涨幅，2%-5%为最佳区间 |
 
 **等级**: A(≥70) 强推 | B(50-69) 推荐 | C(35-49) 关注 | D(<35) 忽略
+**范围**: 仅限主板 + 中小板，已排除科创板(688)和创业板(300/301)
 """)

@@ -20,14 +20,22 @@ def score_all(stocks_data, trade_date=None):
     if trade_date is None:
         trade_date = datetime.now().strftime("%Y-%m-%d")
 
+    # 科创板(688xxx)和创业板(300xxx/301xxx)代码前缀黑名单
+    EXCLUDED_PREFIXES = ('688', '300', '301')
+
     results = []
     for s in stocks_data:
         try:
+            code = s.get('code', '')
+            # 排除科创板和创业板
+            if code.startswith(EXCLUDED_PREFIXES):
+                continue
+
             total, subscores = compute_total_score(s)
             grade = _classify(total)
 
             results.append({
-                'code': s.get('code', ''),
+                'code': code,
                 'name': s.get('name', ''),
                 'trade_date': trade_date,
                 'volume_score': subscores['volume'],

@@ -106,50 +106,6 @@ def init_db():
         created_at      TEXT DEFAULT (datetime('now','localtime'))
     )""")
 
-    # 模拟账户
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS paper_account (
-        id          INTEGER PRIMARY KEY CHECK (id = 1),
-        cash        REAL DEFAULT 1000000,
-        initial_cash REAL DEFAULT 1000000,
-        commission  REAL DEFAULT 0,
-        stamp_tax   REAL DEFAULT 0,
-        updated_at  TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-    # 确保有默认行
-    cur.execute("INSERT OR IGNORE INTO paper_account(id) VALUES(1)")
-
-    # 模拟持仓
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS paper_positions (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        code          TEXT NOT NULL UNIQUE,
-        name          TEXT,
-        shares        INTEGER NOT NULL,
-        avg_cost      REAL,
-        current_price REAL,
-        market_value  REAL,
-        unrealized_pnl REAL,
-        updated_at    TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-
-    # 模拟订单
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS paper_orders (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        code          TEXT NOT NULL,
-        name          TEXT,
-        direction     TEXT NOT NULL,
-        price         REAL,
-        shares        INTEGER NOT NULL,
-        filled_shares INTEGER DEFAULT 0,
-        status        TEXT DEFAULT 'FILLED',
-        commission    REAL DEFAULT 0,
-        stamp_tax     REAL DEFAULT 0,
-        reason        TEXT,
-        created_at    TEXT DEFAULT (datetime('now','localtime'))
-    )""")
-
     conn.commit()
     conn.close()
 
@@ -281,77 +237,6 @@ def get_strategy_signals(trade_date=None, min_score=0, limit=50):
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-# ===================== 模拟交易 =====================
-
-def get_paper_account():
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM paper_account WHERE id=1").fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def update_paper_account(cash=None, commission=None, stamp_tax=None):
-    conn = get_conn()
-    parts = []
-    params = []
-    if cash is not None:
-        parts.append("cash=?")
-        params.append(cash)
-    if commission is not None:
-        parts.append("commission=?")
-        params.append(commission)
-    if stamp_tax is not None:
-        parts.append("stamp_tax=?")
-        params.append(stamp_tax)
-    parts.append("updated_at=datetime('now','localtime')")
-    conn.execute(f"UPDATE paper_account SET {','.join(parts)} WHERE id=1", params)
-    conn.commit()
-    conn.close()
-
-
-def get_paper_positions():
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM paper_positions").fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def update_paper_position(code, name, shares, avg_cost, current_price=None):
-    conn = get_conn()
-    market_value = shares * (current_price or avg_cost)
-    unrealized_pnl = shares * ((current_price or avg_cost) - avg_cost)
-    conn.execute("""
-        INSERT OR REPLACE INTO paper_positions(code, name, shares, avg_cost, current_price, market_value, unrealized_pnl, updated_at)
-        VALUES(?,?,?,?,?,?,?,datetime('now','localtime'))
-    """, (code, name, shares, avg_cost, current_price or avg_cost, market_value, unrealized_pnl))
-    conn.commit()
-    conn.close()
-
-
-def delete_paper_position(code):
-    conn = get_conn()
-    conn.execute("DELETE FROM paper_positions WHERE code=?", (code,))
-    conn.commit()
-    conn.close()
-
-
-def save_paper_order(code, name, direction, price, shares, commission=0, stamp_tax=0, reason=""):
-    conn = get_conn()
-    conn.execute("""
-        INSERT INTO paper_orders(code, name, direction, price, shares, commission, stamp_tax, reason, status, filled_shares)
-        VALUES(?,?,?,?,?,?,?,?,'FILLED',?)
-    """, (code, name, direction, price, shares, commission, stamp_tax, reason, shares))
-    conn.commit()
-    conn.close()
-
-
-def get_paper_orders(limit=100):
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM paper_orders ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
