@@ -46,31 +46,33 @@ def init_db():
     )""")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_kline_code ON daily_kline(code, trade_date)")
 
-    # 集合竞价汇总
+    # 尾盘数据
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS call_auction (
-        id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        code            TEXT NOT NULL,
-        trade_date      TEXT NOT NULL,
-        auction_volume  REAL,
-        auction_amount  REAL,
-        open_price      REAL,
-        pre_close       REAL,
-        open_gap_pct    REAL,
-        bid_vol         REAL,
-        ask_vol         REAL,
-        imbalance_ratio REAL,
-        auction_high    REAL,
-        auction_low     REAL,
-        price_trend_slope REAL,
-        vol_ma5         REAL,
-        vol_ma10        REAL,
-        vol_ma20        REAL,
-        vol_ratio_vs_ma20 REAL,
-        total_score     REAL,
+    CREATE TABLE IF NOT EXISTS eod_data (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        code                TEXT NOT NULL,
+        trade_date          TEXT NOT NULL,
+        open_price          REAL,
+        high                REAL,
+        low                 REAL,
+        close_price         REAL,
+        pre_close           REAL,
+        daily_change_pct    REAL,
+        eod_change_pct      REAL,
+        close_position      REAL,
+        volume              REAL,
+        eod_vol_ratio       REAL,
+        vol_ratio_vs_ma20   REAL,
+        vol_ma5             REAL,
+        vol_ma10            REAL,
+        vol_ma20            REAL,
+        consecutive_up_days INTEGER DEFAULT 0,
+        flow_direction      INTEGER DEFAULT 0,
+        flow_strength       REAL,
+        total_score         REAL,
         UNIQUE(code, trade_date)
     )""")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_ca_date ON call_auction(trade_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_eod_date ON eod_data(trade_date)")
 
     # 策略信号
     cur.execute("""
@@ -79,13 +81,14 @@ def init_db():
         code            TEXT NOT NULL,
         name            TEXT,
         trade_date      TEXT NOT NULL,
-        volume_score    REAL, trend_score REAL,
-        imbalance_score REAL, gap_score REAL,
+        momentum_score  REAL, volume_score REAL,
+        strength_score  REAL, flow_score REAL,
         total_score     REAL,
         grade           TEXT,
         rank            INTEGER,
-        open_gap_pct    REAL,
-        auction_volume  REAL,
+        close_price     REAL,
+        daily_change_pct REAL,
+        eod_change_pct  REAL,
         created_at      TEXT DEFAULT (datetime('now','localtime')),
         UNIQUE(code, trade_date)
     )""")
@@ -166,33 +169,36 @@ def get_daily_kline(code, start_date=None, end_date=None):
     return [dict(r) for r in rows]
 
 
-# ===================== 集合竞价 =====================
+# ===================== 尾盘数据 =====================
 
-def save_call_auction(rows):
+def save_eod_data(rows):
     """rows: list of dicts"""
     conn = get_conn()
     for r in rows:
         conn.execute("""
-            INSERT OR REPLACE INTO call_auction
-            (code, trade_date, auction_volume, auction_amount, open_price, pre_close,
-             open_gap_pct, bid_vol, ask_vol, imbalance_ratio, auction_high, auction_low,
-             price_trend_slope, vol_ma5, vol_ma10, vol_ma20, vol_ratio_vs_ma20, total_score)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            INSERT OR REPLACE INTO eod_data
+            (code, trade_date, open_price, high, low, close_price, pre_close,
+             daily_change_pct, eod_change_pct, close_position, volume, eod_vol_ratio,
+             vol_ratio_vs_ma20, vol_ma5, vol_ma10, vol_ma20,
+             consecutive_up_days, flow_direction, flow_strength, total_score)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
-            r.get('code'), r.get('trade_date'), r.get('auction_volume'), r.get('auction_amount'),
-            r.get('open_price'), r.get('pre_close'), r.get('open_gap_pct'),
-            r.get('bid_vol'), r.get('ask_vol'), r.get('imbalance_ratio'),
-            r.get('auction_high'), r.get('auction_low'), r.get('price_trend_slope'),
-            r.get('vol_ma5'), r.get('vol_ma10'), r.get('vol_ma20'),
-            r.get('vol_ratio_vs_ma20'), r.get('total_score'),
+            r.get('code'), r.get('trade_date'),
+            r.get('open_price'), r.get('high'), r.get('low'),
+            r.get('close_price'), r.get('pre_close'),
+            r.get('daily_change_pct'), r.get('eod_change_pct'),
+            r.get('close_position'), r.get('volume'), r.get('eod_vol_ratio'),
+            r.get('vol_ratio_vs_ma20'), r.get('vol_ma5'), r.get('vol_ma10'),
+            r.get('vol_ma20'), r.get('consecutive_up_days'),
+            r.get('flow_direction'), r.get('flow_strength'), r.get('total_score', 0),
         ))
     conn.commit()
     conn.close()
 
 
-def get_call_auction(code=None, trade_date=None):
+def get_eod_data(code=None, trade_date=None):
     conn = get_conn()
-    sql = "SELECT * FROM call_auction WHERE 1=1"
+    sql = "SELECT * FROM eod_data WHERE 1=1"
     params = []
     if code:
         sql += " AND code=?"
@@ -214,14 +220,16 @@ def save_strategy_signals(signals):
     for s in signals:
         conn.execute("""
             INSERT OR REPLACE INTO strategy_signals
-            (code, name, trade_date, volume_score, trend_score, imbalance_score, gap_score,
-             total_score, grade, rank, open_gap_pct, auction_volume)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            (code, name, trade_date, momentum_score, volume_score, strength_score, flow_score,
+             total_score, grade, rank, close_price, daily_change_pct, eod_change_pct)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             s['code'], s['name'], s['trade_date'],
-            s['volume_score'], s['trend_score'], s['imbalance_score'], s['gap_score'],
+            s.get('momentum_score', 0), s.get('volume_score', 0),
+            s.get('strength_score', 0), s.get('flow_score', 0),
             s['total_score'], s['grade'], s['rank'],
-            s.get('open_gap_pct', 0), s.get('auction_volume', 0),
+            s.get('close_price', 0), s.get('daily_change_pct', 0),
+            s.get('eod_change_pct', 0),
         ))
     conn.commit()
     conn.close()

@@ -1,25 +1,25 @@
 """
-回测引擎 — Backtrader Cerebro 配置与执行
+回测引擎 — Backtrader Cerebro 配置与执行 (尾盘狙击策略)
 """
 import backtrader as bt
 
-from backtest.ca_strategy import CallAuctionStrategy
+from backtest.eod_strategy import EodSniperStrategy
 from backtest.data_adapter import ASharePandasData, prepare_backtest_data
 from backtest.metrics import compute_metrics
 
 
 def run_backtest(stock_codes, start_date, end_date,
                  initial_cash=100000, min_score=50, max_positions=5,
-                 position_pct=0.20, hold_days=5, stop_loss=-0.05,
-                 take_profit=0.10, progress_callback=None):
+                 position_pct=0.20, hold_days=1, stop_loss=-0.03,
+                 take_profit=0.05, progress_callback=None):
     """
-    运行回测
+    运行尾盘狙击回测
 
     参数:
         stock_codes: list of str, 股票代码列表
         start_date: str, 'YYYY-MM-DD'
         end_date: str, 'YYYY-MM-DD'
-        ...其他策略参数
+        ...其他策略参数 (默认值针对尾盘狙击策略)
 
     返回:
         dict: {
@@ -30,9 +30,9 @@ def run_backtest(stock_codes, start_date, end_date,
     """
     cerebro = bt.Cerebro()
 
-    # 策略
+    # 尾盘狙击策略
     cerebro.addstrategy(
-        CallAuctionStrategy,
+        EodSniperStrategy,
         min_score=min_score,
         max_positions=max_positions,
         position_pct=position_pct,
@@ -78,7 +78,7 @@ def run_backtest(stock_codes, start_date, end_date,
     cerebro.addobserver(bt.observers.DrawDown)
 
     # 运行
-    print(f"回测开始: {start_date} ~ {end_date}, {loaded}只股票, 初始资金{initial_cash:,.0f}")
+    print(f"尾盘狙击回测: {start_date} ~ {end_date}, {loaded}只股票, 初始资金{initial_cash:,.0f}")
     initial = cerebro.broker.getvalue()
     results = cerebro.run()
     final = cerebro.broker.getvalue()

@@ -1,5 +1,5 @@
 """
-StockAnalyzer 全局配置
+StockAnalyzer 全局配置 — 尾盘狙击策略
 """
 import os
 
@@ -15,18 +15,18 @@ os.makedirs(DB_DIR, exist_ok=True)
 CACHE_TTL = {
     "stock_list": 86400,        # 股票列表: 1天
     "daily_kline": 86400,       # 日K线: 1天
-    "call_auction": 3600,       # 集合竞价: 1小时 (当天有效)
+    "eod_data": 3600,           # 尾盘数据: 1小时 (当天有效)
     "index_daily": 3600,        # 指数: 1小时
 }
 
-# 集合竞价策略参数
+# 尾盘狙击策略参数
 STRATEGY_PARAMS = {
     "min_score": 50,            # 最低推荐分数
     "max_positions": 5,         # 最大持仓数
     "position_pct": 0.20,       # 单笔仓位比例
-    "hold_days": 5,             # 默认持仓天数
-    "stop_loss": -0.05,         # 止损 -5%
-    "take_profit": 0.10,        # 止盈 +10%
+    "hold_days": 1,             # 默认持仓天数 (隔日)
+    "stop_loss": -0.03,         # 止损 -3% (短线快进快出)
+    "take_profit": 0.05,        # 止盈 +5%
 }
 
 # 交易费用
@@ -48,12 +48,12 @@ RISK_PARAMS = {
 
 # 股市交易时间
 TRADING_HOURS = {
-    "call_auction_start": "09:15",
-    "call_auction_end": "09:25",
     "morning_start": "09:30",
     "morning_end": "11:30",
     "afternoon_start": "13:00",
     "afternoon_end": "15:00",
+    "eod_scan_start": "14:30",   # 尾盘扫描开始
+    "eod_entry_time": "14:55",   # 尾盘入场时间
 }
 
 # 指数代码

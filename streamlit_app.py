@@ -1,93 +1,118 @@
 """
-StockAnalyzer — A股集合竞价分析系统
-Streamlit Cloud 入口文件
+StockAnalyzer — A股尾盘狙击系统
+单页面：尾盘扫描 + 评分推荐
 """
 import sys
 import os
-
-# 确保项目根目录在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import streamlit as st
-from data.database import init_db
-from common import show_header, show_disclaimer
+import pandas as pd
+from datetime import datetime
+from data.database import init_db, get_all_stocks, get_strategy_signals
+from data.eod_fetcher import fetch_eod_data
+from strategy.eod_scorer import score_all, grade_label
+from common import show_disclaimer, plot_bar
 
-# 页面配置 — 必须是第一个 Streamlit 命令
 st.set_page_config(
-    page_title="A股集合竞价分析系统",
-    page_icon="📊",
+    page_title="A股尾盘狙击系统",
+    page_icon="🎯",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
-# 初始化数据库
 init_db()
 
-# ---- 侧边栏 ----
-with st.sidebar:
-    st.markdown("# 📊 StockAnalyzer")
-    st.markdown("### A股集合竞价分析系统")
-    st.markdown("---")
-
-    st.markdown("""
-    **功能导航**:
-    - 📈 **市场看板** — 指数、板块、涨跌榜
-    - 🔬 **集合竞价** — 竞价分析 + 股票推荐
-    - ⚡ **量化回测** — 策略回测与绩效
-    """)
-
-    st.markdown("---")
-    st.caption("数据源: akshare (免费开源)")
-    st.caption("⚠️ 仅供学习演示，不构成投资建议")
-
-# ---- 主页 ----
-show_header()
 show_disclaimer()
 
-st.markdown("---")
+st.title("🎯 尾盘狙击分析")
+st.caption("基于尾盘动量、量能爆发、日线强势、资金流向四维评分模型")
+st.caption("⚠️ 已排除科创板(688xxx)和创业板(300xxx/301xxx)")
+st.caption("🕐 最佳扫描时间: 14:30-14:55 (尾盘最后30分钟)")
 
-# 快速概览
-st.markdown("## 📊 系统概览")
-
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
 with col1:
-    st.info("### 📈 市场看板\n查看A股指数、板块资金流向、涨跌排行")
+    trade_date = st.date_input("分析日期", datetime.now())
 with col2:
-    st.success("### 🔬 集合竞价\n分析9:15-9:25竞价数据，自动评分推荐")
+    max_stocks = st.selectbox("扫描范围", [50, 100, 200, 500], index=1)
 with col3:
-    st.warning("### ⚡ 量化回测\n基于历史数据回测竞价策略，评估绩效")
+    st.markdown("<br>", unsafe_allow_html=True)
+    scan_btn = st.button("🔍 开始扫描", type="primary", use_container_width=True)
 
+if scan_btn:
+    date_str = trade_date.strftime("%Y-%m-%d")
+    st.markdown(f"### 📊 扫描中... ({date_str}, {max_stocks}只)")
+
+    with st.spinner("获取尾盘数据..."):
+        eod_data = fetch_eod_data(date_str, None, max_stocks)
+        if eod_data is None or eod_data.empty:
+            st.error("无法获取尾盘数据（非交易日或接口异常）")
+        else:
+            st.success(f"获取 {len(eod_data)} 只股票")
+
+            with st.spinner("评分中..."):
+                records = eod_data.to_dict('records')
+                name_map = {s['code']: s['name'] for s in get_all_stocks()}
+                for r in records:
+                    r['name'] = name_map.get(r['code'], r['code'])
+                results = score_all(records, date_str)
+
+            st.success(f"完成! {len(results)} 只 (排除科创板/创业板)")
+
+            # 概览
+            st.markdown("### 📊 概览")
+            a = sum(1 for r in results if r['grade'] == 'A')
+            b = sum(1 for r in results if r['grade'] == 'B')
+            c = sum(1 for r in results if r['grade'] == 'C')
+            d = sum(1 for r in results if r['grade'] == 'D')
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("🟢 A级强推", a)
+            m2.metric("🔵 B级推荐", b)
+            m3.metric("🟡 C级关注", c)
+            m4.metric("⚪ D级忽略", d)
+            m5.metric("总计", len(results))
+
+            # 推荐
+            st.markdown("### 🏆 推荐股票 (前15)")
+            top_n = min(15, len(results))
+            df_show = pd.DataFrame(results[:top_n])
+            if not df_show.empty:
+                cols = ['rank','code','name','total_score','grade',
+                       'momentum_score','volume_score','strength_score','flow_score',
+                       'close_price','daily_change_pct','eod_change_pct']
+                df_show = df_show[[c for c in cols if c in df_show.columns]]
+                st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+            # 分布
+            st.markdown("### 📊 分数分布")
+            scores = [r['total_score'] for r in results]
+            bins = [0, 35, 50, 70, 100]
+            labels = ['D(0-35)', 'C(35-50)', 'B(50-70)', 'A(70-100)']
+            hist = pd.cut(scores, bins=bins, labels=labels).value_counts().sort_index()
+            st.plotly_chart(plot_bar(hist.index.tolist(), hist.values.tolist(),
+                                     title="评分分布", xlabel="等级", ylabel="数量"),
+                           use_container_width=True)
+
+# 历史
 st.markdown("---")
+st.markdown("### 📋 历史信号")
+if st.button("📂 加载最近信号"):
+    signals = get_strategy_signals(limit=50)
+    if signals:
+        st.dataframe(pd.DataFrame(signals), use_container_width=True, hide_index=True)
+    else:
+        st.info("暂无历史信号")
 
-st.markdown("## 🚀 快速开始")
+# 模型说明
+st.markdown("---")
+st.markdown("### 📖 评分模型")
 st.markdown("""
-1. **查看市场** → 点击左侧 `📈 市场看板` 页面，了解今日大盘概况
-2. **扫描竞价** → 进入 `🔬 集合竞价` 页面，点击"开始扫描"获取推荐股票
-3. **策略回测** → 在 `⚡ 量化回测` 页面配置参数，运行历史回测
+| 维度 | 满分 | 评估 |
+|------|------|------|
+| **尾盘动量** | 30分 | 最后30分钟涨跌幅 + 收盘在日内区间的位置 |
+| **量能爆发** | 25分 | 尾盘放量倍数 + 全日量 vs 20日均量 |
+| **日线强势** | 25分 | 当日涨跌幅 + 连续阳线天数 |
+| **资金流向** | 20分 | 尾盘主动买盘方向与强度 |
+
+**等级**: A(≥70) 强推 | B(50-69) 推荐 | C(35-49) 关注 | D(<35) 忽略
+**策略**: 14:55尾盘买入 → T+1次日盘中择机卖出
 """)
-
-st.markdown("---")
-st.markdown("## ⏰ A股交易时间")
-st.markdown("""
-| 阶段 | 时间 |
-|------|------|
-| 集合竞价 | 9:15 — 9:25 |
-| 连续竞价 (上午) | 9:30 — 11:30 |
-| 连续竞价 (下午) | 13:00 — 15:00 |
-""")
-
-# 数据状态
-st.markdown("---")
-st.markdown("## 📦 数据状态")
-
-try:
-    from data.database import get_stock_count
-    stock_count = get_stock_count()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric("股票池", f"{stock_count}" if stock_count else "未加载")
-    with c2:
-        st.metric("数据库", "SQLite", delta="就绪" if stock_count else "空")
-except Exception:
-    st.caption("数据库尚未初始化，访问各页面时将自动创建")
