@@ -9,10 +9,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from data.database import init_db, get_all_stocks, get_strategy_signals
-from data.eod_fetcher import fetch_eod_data
-from strategy.eod_scorer import score_all, grade_label
-from common import show_disclaimer, plot_bar
+
+# 延迟导入，方便排查 Streamlit Cloud 上的加载问题
+@st.cache_resource
+def init_app():
+    from data.database import init_db
+    init_db()
+
+try:
+    from data.database import get_all_stocks, get_strategy_signals
+    from data.eod_fetcher import fetch_eod_data
+    from strategy.eod_scorer import score_all
+    from common import show_disclaimer, plot_bar
+except Exception as e:
+    st.error(f"模块加载失败: {e}")
+    st.code(f"错误类型: {type(e).__name__}\n错误详情: {e}")
+    st.stop()
 
 st.set_page_config(
     page_title="A股尾盘狙击系统",
